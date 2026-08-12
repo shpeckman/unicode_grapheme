@@ -1,0 +1,9 @@
+name: unicode_grapheme
+version: 0.1.0
+
+authors:
+  - shpeckman <geelenrobin@proton.me>
+
+crystal: '>= 1.21.0'
+
+license: MIT

@@ -5,3 +5,5 @@
 /shard.lock/
 *.dwarf
 /.zig-cache/
+/tool/.ucd/
+/src/unicode_grapheme/data/

@@ -8,6 +8,3 @@ authors:
 crystal: '>= 1.21.0'
 
 license: MIT
-
-scripts:
-  postinstall: make gen-check

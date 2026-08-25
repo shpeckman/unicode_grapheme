@@ -6,5 +6,4 @@
 *.dwarf
 /.zig-cache/
 /tool/.ucd/
-/src/unicode_grapheme/data/
 /spec/fixtures/

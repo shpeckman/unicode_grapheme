@@ -43,4 +43,16 @@ module UW::UTF8
 
     {codepoint, pos + trailing + 1}
   end
+
+  def self.encoded_length(codepoint : UInt32) : Int32
+    if codepoint < 0x80_u32
+      1
+    elsif codepoint < 0x800_u32
+      2
+    elsif codepoint < 0x10000_u32
+      3
+    else
+      4
+    end
+  end
 end

@@ -66,7 +66,10 @@
 require "./unicode_grapheme/tables"
 require "./unicode_grapheme/props"
 require "./unicode_grapheme/utf8"
+require "./unicode_grapheme/break_state"
+require "./unicode_grapheme/cluster_width"
 require "./unicode_grapheme/segmenter"
+require "./unicode_grapheme/stream"
 
 module UW
   VERSION         = {{ `shards version "#{__DIR__}"`.chomp.stringify }}

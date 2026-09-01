@@ -177,4 +177,89 @@ describe UW do
       UW.count(string).should eq(UW.count(string.to_slice))
     end
   end
+
+  describe UW::Stream do
+    it "returns nil while a cluster is still open" do
+      stream = UW::Stream.new
+      stream.feed('e').should be_nil
+      stream.feed('\u0301').should be_nil
+    end
+
+    it "returns the completed cluster's width and byte length on a break" do
+      stream = UW::Stream.new
+      stream.feed('e')
+      stream.feed('\u0301')
+      stream.feed('a').should eq({1, "e\u0301".bytesize})
+    end
+
+    it "flushes the pending cluster with finish" do
+      stream = UW::Stream.new
+      stream.feed('\u4E00')
+      stream.finish.should eq({2, 3})
+      stream.finish.should be_nil
+    end
+
+    it "reports zero width for a control cluster" do
+      stream = UW::Stream.new
+      stream.feed('\t')
+      stream.feed('a').should eq({0, 1})
+    end
+
+    it "drops pending state on reset" do
+      stream = UW::Stream.new
+      stream.feed('\u{1F1FA}')
+      stream.reset
+      stream.finish.should be_nil
+      stream.feed('\u{1F1F8}').should be_nil
+      stream.finish.should eq({2, 4})
+    end
+
+    it "accepts raw codepoints" do
+      stream = UW::Stream.new
+      stream.feed(0x1F600_u32)
+      stream.finish.should eq({2, 4})
+    end
+
+    it "matches the batch API on every official test case" do
+      failures = [] of String
+
+      SpecHelper.break_cases.each do |test|
+        next unless test.source.valid_encoding?
+
+        stream = UW::Stream.new
+        actual = [] of {String, Int32}
+        offset = 0
+        bytes  = test.source.to_slice
+
+        test.source.each_char do |char|
+          next unless completed = stream.feed(char)
+          width, size = completed
+          actual << {String.new(bytes[offset, size]), width}
+          offset += size
+        end
+
+        if completed = stream.finish
+          width, size = completed
+          actual << {String.new(bytes[offset, size]), width}
+          offset += size
+        end
+
+        if offset != test.source.bytesize
+          fail "offset #{offset} != #{test.source.bytesize} at line #{test.line}: #{test.source.bytes.inspect}"
+        end
+
+        expected = [] of {String, Int32}
+        UW.each(test.source) { |cluster, width| expected << {String.new(cluster), width} }
+
+        next if actual == expected
+        failures << "line #{test.line}: expected #{expected.inspect}, " \
+                    "got #{actual.inspect} (#{test.description})"
+      end
+
+      unless failures.empty?
+        shown = failures.first(20).join('\n')
+        fail "#{failures.size} streaming failures:\n#{shown}"
+      end
+    end
+  end
 end

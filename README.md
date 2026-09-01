@@ -59,6 +59,24 @@ clusters = [] of String
 UW.each(line) { |cluster, _| clusters << String.new(cluster) }
 ```
 
+### Streaming
+
+`UW::Stream` is the push-model counterpart for sources that deliver one codepoint at a time, such as a terminal parser. Feed it decoded codepoints; it returns the completed cluster's `{width, byte_length}` when a boundary is crossed, `nil` while the cluster is still open:
+
+```crystal
+stream = UW::Stream.new
+
+stream.feed('e')      # => nil
+stream.feed('\u0301') # => nil — the combining mark joins the pending cluster
+stream.feed('a')      # => {1, 3} — "e\u0301" is complete: 1 column, 3 bytes
+
+stream.finish         # => {1, 1} — flushes the pending "a" at end of input
+```
+
+The caller owns the bytes: track the pending cluster yourself and use the returned byte length to delimit completed ones. Call `finish` at end of input and `reset` to drop all pending state. A `finish` is a hard boundary — a cluster flushed there never joins text fed later, even if the batch API would join it.
+
+Input is assumed to be decoded codepoints (or `Char` via the overload). The byte-level invalid-input guarantees of the batch API do not apply here; decode UTF-8 first, substituting U+FFFD as needed.
+
 ### Width policy
 
 Width is computed per cluster, not per codepoint, which is why a flag or a family emoji is two columns rather than the sum of its parts.

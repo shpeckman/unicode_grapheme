@@ -50,15 +50,30 @@ struct UW::Props
       return new((codepoint - HANGUL_FIRST) % HANGUL_CYCLE == 0 ? HANGUL_LV : HANGUL_LVT)
     end
 
-    lo    = Tables::LO.to_unsafe
-    hi    = Tables::HI.to_unsafe
-    index = Tables::PAGE.to_unsafe[codepoint >> 8].to_i32
-    limit = Tables::LO.size
+    pages = Tables::PAGE
+    page  = (codepoint >> 8).to_i32
+    return new(0_u8) if page >= pages.size
 
-    while index < limit && lo[index] <= codepoint
-      return new(Tables::V.to_unsafe[index]) if codepoint <= hi[index]
-      index += 1
+    last = Tables::LO.size - 1
+    low  = pages.to_unsafe[page].to_i32
+    return new(0_u8) if low > last
+
+    high = page + 1 < pages.size ? pages.to_unsafe[page + 1].to_i32 : last
+    high = last if high > last
+
+    lo = Tables::LO.to_unsafe
+    hi = Tables::HI.to_unsafe
+
+    while low < high
+      mid = (low + high + 1) >> 1
+      if lo[mid] <= codepoint
+        low = mid
+      else
+        high = mid - 1
+      end
     end
+
+    return new(Tables::V.to_unsafe[low]) if lo[low] <= codepoint && codepoint <= hi[low]
 
     new(0_u8)
   end

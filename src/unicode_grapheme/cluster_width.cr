@@ -21,10 +21,10 @@ struct UW::ClusterWidth
   end
 
   def add(props : Props, codepoint : UInt32) : Nil
-    @wide         ||= props.wide?
+    @wide ||= props.wide?
     @pictographic ||= props.pictographic?
-    @variation    ||= codepoint == VARIATION_SELECTOR_16
-    @regional     ||= props.gcb.ri?
+    @variation ||= codepoint == VARIATION_SELECTOR_16
+    @regional ||= props.gcb.ri?
   end
 
   def value : Int32

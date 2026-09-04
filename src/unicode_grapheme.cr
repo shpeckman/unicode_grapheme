@@ -42,6 +42,24 @@
 # Together they clip a run of text to a window without splitting clusters
 # at either edge.
 
+# ANSI escape sequences
+# ---------------------
+#
+# `UW::ANSI` offers the same five operations with awareness of CSI
+# (`ESC [` parameter/intermediate bytes, one final byte) and OSC
+# (`ESC ]` payload, closed by BEL or ST) escape sequences. Each sequence
+# segments as its own zero-width cluster — atomic for `fit`/`skip`, and a
+# hard boundary that never joins the text on either side — so styled text
+# measures by its visible cells:
+#
+#   UW::ANSI.width("\e[31mred\e[0m")   # => 3
+#   UW::ANSI.count("\e[31mred\e[0m")   # => 5 (3 letters + 2 escapes)
+#   UW::ANSI.fit("\e[31mred\e[0m", 2)  # => {7, 2}
+#
+# A sequence truncated by the end of the input is consumed whole; a lone
+# ESC that introduces no sequence keeps its plain UAX #29 treatment as a
+# zero-width control cluster. `UW::Stream` is not ANSI-aware.
+
 # Cluster slices
 # --------------
 #
@@ -90,14 +108,20 @@ require "./unicode_grapheme/break_state"
 require "./unicode_grapheme/cluster_width"
 require "./unicode_grapheme/segmenter"
 require "./unicode_grapheme/stream"
+require "./unicode_grapheme/ansi"
 
 module UW
   VERSION         = {{ `shards version "#{__DIR__}"`.chomp.stringify }}
   UNICODE_VERSION = "17.0.0"
 
   def self.each(bytes : Bytes, & : Bytes, Int32 ->) : Nil
-    segmenter = Segmenter.new(bytes)
+    each(Segmenter.new(bytes), bytes) do |cluster, width|
+      yield cluster, width
+    end
+  end
 
+  # :nodoc:
+  def self.each(segmenter : Segmenter, bytes : Bytes, & : Bytes, Int32 ->) : Nil
     while true
       start = segmenter.pos
       size, width = segmenter.next
@@ -113,10 +137,14 @@ module UW
   end
 
   def self.width(bytes : Bytes) : Int32
-    data      = bytes.to_unsafe
-    segmenter = Segmenter.new(bytes)
-    size      = bytes.size
-    total     = 0
+    width(Segmenter.new(bytes), bytes)
+  end
+
+  # :nodoc:
+  def self.width(segmenter : Segmenter, bytes : Bytes) : Int32
+    data  = bytes.to_unsafe
+    size  = bytes.size
+    total = 0
 
     while segmenter.pos < size
       if (segmenter.pos == 0 || segmenter.prev.other?) && data[segmenter.pos] < 0x80
@@ -137,10 +165,14 @@ module UW
   end
 
   def self.count(bytes : Bytes) : Int32
-    data      = bytes.to_unsafe
-    segmenter = Segmenter.new(bytes)
-    size      = bytes.size
-    total     = 0
+    count(Segmenter.new(bytes), bytes)
+  end
+
+  # :nodoc:
+  def self.count(segmenter : Segmenter, bytes : Bytes) : Int32
+    data  = bytes.to_unsafe
+    size  = bytes.size
+    total = 0
 
     while segmenter.pos < size
       if (segmenter.pos == 0 || segmenter.prev.other?) && data[segmenter.pos] < 0x80
@@ -160,12 +192,16 @@ module UW
   end
 
   def self.fit(bytes : Bytes, columns : Int32) : {Int32, Int32}
+    fit(Segmenter.new(bytes), bytes, columns)
+  end
+
+  # :nodoc:
+  def self.fit(segmenter : Segmenter, bytes : Bytes, columns : Int32) : {Int32, Int32}
     return {0, 0} if columns <= 0
 
-    segmenter = Segmenter.new(bytes)
-    size      = bytes.size
-    count     = 0
-    total     = 0
+    size  = bytes.size
+    count = 0
+    total = 0
 
     while segmenter.pos < size
       length, width = segmenter.next
@@ -183,11 +219,15 @@ module UW
   end
 
   def self.skip(bytes : Bytes, columns : Int32) : {Int32, Int32}
+    skip(Segmenter.new(bytes), bytes, columns)
+  end
+
+  # :nodoc:
+  def self.skip(segmenter : Segmenter, bytes : Bytes, columns : Int32) : {Int32, Int32}
     return {0, 0} if columns <= 0
 
-    segmenter = Segmenter.new(bytes)
-    size      = bytes.size
-    total     = 0
+    size  = bytes.size
+    total = 0
 
     while segmenter.pos < size && total < columns
       length, width = segmenter.next

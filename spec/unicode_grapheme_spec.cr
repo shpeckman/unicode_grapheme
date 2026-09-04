@@ -242,7 +242,7 @@ describe UW do
 
       samples.each do |string|
         0.upto(UW.width(string) + 1) do |budget|
-          fit_bytes, fit_width   = UW.fit(string, budget)
+          fit_bytes, fit_width = UW.fit(string, budget)
           skip_bytes, skip_width = UW.skip(string, budget)
 
           fit_bytes.should be <= skip_bytes

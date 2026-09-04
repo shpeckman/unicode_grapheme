@@ -10,9 +10,12 @@ struct UW::Segmenter
   DEL_BITS   = 0x7F7F7F7F7F7F7F7F_u64
   ONE_BITS   = 0x0101010101010101_u64
 
+  ESCAPE = 0x1B_u8
+  BEL    = 0x07_u8
+
   getter pos : Int32
 
-  def initialize(bytes : Bytes)
+  def initialize(bytes : Bytes, @ansi : Bool = false)
     @data            = bytes.to_unsafe
     @size            = bytes.size
     @pos             = 0
@@ -29,6 +32,16 @@ struct UW::Segmenter
 
   def next : {Int32, Int32}
     return {0, 0} if @pos >= @size
+
+    if @ansi
+      escape = escape_length
+      if escape > 0
+        @pos += escape
+        @ahead = false
+        @state.reset
+        return {escape, 0}
+      end
+    end
 
     start = @pos
 
@@ -108,5 +121,55 @@ struct UW::Segmenter
 
   private def ascii_printable?(byte : UInt8) : Bool
     byte >= ASCII_FIRST && byte < ASCII_LAST
+  end
+
+  # Byte length of the ANSI escape sequence starting at the current
+  # position, or zero when the bytes there do not begin a CSI or OSC
+  # sequence. A sequence truncated by the end of the buffer consumes the
+  # rest of the buffer; a malformed sequence ends just before its first
+  # invalid byte. A lone ESC that introduces neither sequence is left to
+  # the plain UAX #29 rules (a zero-width control cluster).
+  private def escape_length : Int32
+    return 0 unless @data[@pos] == ESCAPE
+    return 0 if @pos + 1 >= @size
+
+    case @data[@pos + 1]
+    when 0x5B then csi_length # '['
+    when 0x5D then osc_length # ']'
+    else           0
+    end
+  end
+
+  # CSI: ESC '[', then parameter and intermediate bytes (0x20-0x3F),
+  # closed by one final byte (0x40-0x7E).
+  private def csi_length : Int32
+    pos = @pos + 2
+
+    while pos < @size
+      byte = @data[pos]
+      return pos - @pos + 1 if byte >= 0x40 && byte <= 0x7E
+      break unless byte >= 0x20 && byte <= 0x3F
+      pos += 1
+    end
+
+    pos - @pos
+  end
+
+  # OSC: ESC ']', then payload, closed by BEL or ST (ESC '\'). An ESC
+  # that does not open ST aborts the sequence, which ends just before it.
+  private def osc_length : Int32
+    pos = @pos + 2
+
+    while pos < @size
+      byte = @data[pos]
+      return pos - @pos + 1 if byte == BEL
+      if byte == ESCAPE
+        return pos - @pos + 2 if pos + 1 < @size && @data[pos + 1] == 0x5C
+        break
+      end
+      pos += 1
+    end
+
+    pos - @pos
   end
 end

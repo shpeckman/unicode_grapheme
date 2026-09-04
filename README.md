@@ -68,6 +68,26 @@ UW.skip("你好世界", 1) # => {3, 2}
 
 Together they clip a run of text to a window without splitting clusters at either edge.
 
+### ANSI escape sequences
+
+`UW::ANSI` offers the same five operations with awareness of CSI (`ESC [` parameter/intermediate bytes, one final byte) and OSC (`ESC ]` payload, closed by BEL or ST) escape sequences — SGR styles, cursor control, OSC 8 hyperlinks and friends. Each sequence segments as its own zero-width cluster: atomic for `fit`/`skip`, free in `width`, and a hard boundary that never joins the text on either side:
+
+```crystal
+UW::ANSI.width("\e[31mred\e[0m")      # => 3
+UW::ANSI.count("\e[31mred\e[0m")      # => 5 (3 letters + 2 escapes)
+UW::ANSI.fit("\e[31mred\e[0m", 2)     # => {7, 2}
+
+UW::ANSI.each("a\e[32mb\e[0m") do |cluster, width|
+  puts "#{String.new(cluster).inspect} (#{width})"
+end
+# => "a" (1)
+# => "\e[32m" (0)
+# => "b" (1)
+# => "\e[0m" (0)
+```
+
+`count` counts escape sequences like any other cluster, so it stays consistent with `each`; use `width` for visible cell counts. A sequence truncated by the end of the input is consumed whole, a malformed one ends just before its first invalid byte, and a lone `ESC` that introduces no sequence keeps its plain UAX #29 treatment as a zero-width control cluster. The base `UW` operations are unchanged: they know nothing about escapes, and `UW::Stream` is not ANSI-aware.
+
 ### Cluster slices
 
 `each` yields `Bytes` views into the original buffer. Nothing is copied, so a cluster is only valid for as long as the input is. Materialize with `String.new(cluster)` if you need to keep it:

@@ -158,6 +158,106 @@ describe UW do
     end
   end
 
+  describe ".fit" do
+    it "is zero for empty input" do
+      UW.fit("", 3).should eq({0, 0})
+    end
+
+    it "is zero for a non-positive budget" do
+      UW.fit("abc", 0).should eq({0, 0})
+      UW.fit("abc", -2).should eq({0, 0})
+    end
+
+    it "fits the whole input when the budget allows" do
+      UW.fit("abc", 10).should eq({3, 3})
+    end
+
+    it "fits an exact budget" do
+      UW.fit("你好", 4).should eq({6, 4})
+    end
+
+    it "leaves out a wide cluster that would cross the budget" do
+      UW.fit("你ab", 1).should eq({0, 0})
+      UW.fit("a你b", 2).should eq({1, 1})
+    end
+
+    it "never splits a combining sequence" do
+      UW.fit("e\u0301a", 1).should eq({3, 1})
+    end
+
+    it "never splits a flag" do
+      UW.fit("\u{1F1FA}\u{1F1F8}ab", 1).should eq({0, 0})
+      UW.fit("\u{1F1FA}\u{1F1F8}ab", 2).should eq({8, 2})
+    end
+
+    it "counts zero-width controls as free" do
+      UW.fit("\ta", 1).should eq({2, 1})
+    end
+
+    it "matches the documented example" do
+      UW.fit("你好世界", 5).should eq({6, 4})
+    end
+  end
+
+  describe ".skip" do
+    it "is zero for empty input" do
+      UW.skip("", 3).should eq({0, 0})
+    end
+
+    it "is zero for a non-positive budget" do
+      UW.skip("abc", 0).should eq({0, 0})
+      UW.skip("abc", -2).should eq({0, 0})
+    end
+
+    it "returns the whole input when the budget exceeds its width" do
+      UW.skip("ab", 10).should eq({2, 2})
+    end
+
+    it "consumes a straddling cluster whole" do
+      UW.skip("a你b", 2).should eq({4, 3})
+    end
+
+    it "stops once the budget is reached" do
+      UW.skip("你好", 3).should eq({6, 4})
+    end
+
+    it "skips zero-width controls" do
+      UW.skip("\ta", 1).should eq({2, 1})
+    end
+
+    it "matches the documented example" do
+      UW.skip("你好世界", 1).should eq({3, 2})
+    end
+  end
+
+  describe ".fit and .skip" do
+    it "bracket every budget without splitting clusters" do
+      samples = [
+        "你好世界",
+        "a你b\u{1F600}c",
+        "e\u0301\u{1F1FA}\u{1F1F8}x",
+        "\t\tab",
+        "hello",
+      ]
+
+      samples.each do |string|
+        0.upto(UW.width(string) + 1) do |budget|
+          fit_bytes, fit_width   = UW.fit(string, budget)
+          skip_bytes, skip_width = UW.skip(string, budget)
+
+          fit_bytes.should be <= skip_bytes
+          fit_width.should be <= skip_width
+          skip_bytes.should be <= string.bytesize
+
+          unless fit_bytes == string.bytesize
+            remainder = string.byte_slice(fit_bytes)
+            remainder.valid_encoding?.should be_true
+          end
+        end
+      end
+    end
+  end
+
   describe "String and Bytes overloads" do
     it "agree for each" do
       string      = "a\u4E00\u{1F1FA}\u{1F1F8}e\u0301"
@@ -175,6 +275,16 @@ describe UW do
     it "agree for count" do
       string = "a\u4E00\u{1F1FA}\u{1F1F8}"
       UW.count(string).should eq(UW.count(string.to_slice))
+    end
+
+    it "agree for fit" do
+      string = "a\u4E00\u{1F1FA}\u{1F1F8}"
+      UW.fit(string, 3).should eq(UW.fit(string.to_slice, 3))
+    end
+
+    it "agree for skip" do
+      string = "a\u4E00\u{1F1FA}\u{1F1F8}"
+      UW.skip(string, 3).should eq(UW.skip(string.to_slice, 3))
     end
   end
 

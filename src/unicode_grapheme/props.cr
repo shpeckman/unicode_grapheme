@@ -50,6 +50,15 @@ struct UW::Props
       return new((codepoint - HANGUL_FIRST) % HANGUL_CYCLE == 0 ? HANGUL_LV : HANGUL_LVT)
     end
 
+    # Uniform wide-ideograph blocks: every codepoint is GCB=Other,
+    # INCB=None, not pictographic, wide => 0x20. Verified against the
+    # generated tables.
+    if (codepoint >= 0x3400_u32 && codepoint <= 0x4DBF_u32) ||
+       (codepoint >= 0x4E00_u32 && codepoint <= 0x9FFF_u32) ||
+       (codepoint >= 0xF900_u32 && codepoint <= 0xFAFF_u32)
+      return new(0x20_u8)
+    end
+
     pages = Tables::PAGE
     page  = (codepoint >> 8).to_i32
     return new(0_u8) if page >= pages.size

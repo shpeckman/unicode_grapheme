@@ -106,6 +106,41 @@ struct UW::Segmenter
     @pos - start
   end
 
+  # Consumes a run of codepoints from the uniform CJK wide-ideograph
+  # blocks, returning the byte count. Every such codepoint is a plain,
+  # wide, break-isolated cluster, so a run needs no break-state work.
+  # A codepoint is consumed only when another ideograph follows it, so
+  # the final ideograph of a run is left to the regular path: a trailing
+  # Extend, ZWJ or SpacingMark must still join with it.
+  def skip_cjk : Int32
+    @ahead = false
+    start  = @pos
+
+    while @pos + 6 <= @size && cjk3?(@pos)
+      break unless cjk3?(@pos + 3)
+      @pos += 3
+    end
+
+    @state.reset
+    @pos - start
+  end
+
+  # True when the three bytes at `pos` encode a codepoint in one of the
+  # uniform wide-ideograph blocks (all GCB=Other, INCB=None, wide).
+  private def cjk3?(pos : Int32) : Bool
+    lead = @data[pos]
+    return false unless lead >= 0xE3_u8 && lead <= 0xEF_u8
+    b1 = @data[pos + 1]
+    b2 = @data[pos + 2]
+    return false unless (b1 & 0xC0_u8) == 0x80_u8 && (b2 & 0xC0_u8) == 0x80_u8
+    codepoint = ((lead & 0x0F_u8).to_u32 << 12) |
+                ((b1 & 0x3F_u8).to_u32 << 6) |
+                (b2 & 0x3F_u8).to_u32
+    (codepoint >= 0x3400_u32 && codepoint <= 0x4DBF_u32) ||
+      (codepoint >= 0x4E00_u32 && codepoint <= 0x9FFF_u32) ||
+      (codepoint >= 0xF900_u32 && codepoint <= 0xFAFF_u32)
+  end
+
   private def load_word(offset : Int32) : UInt64
     word = uninitialized UInt64
     pointerof(word).as(UInt8*).copy_from(@data + offset, WORD_BYTES)

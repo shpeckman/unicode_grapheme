@@ -122,11 +122,29 @@ module UW
 
   # :nodoc:
   def self.each(segmenter : Segmenter, bytes : Bytes, & : Bytes, Int32 ->) : Nil
-    while true
+    data = bytes.to_unsafe
+    size = bytes.size
+
+    while segmenter.pos < size
+      if segmenter.pos == 0 || segmenter.prev.other?
+        byte = data[segmenter.pos]
+        if byte < 0x80
+          start = segmenter.pos
+          run   = segmenter.skip_ascii
+          run.times { |i| yield bytes[start + i, 1], 1 }
+          next if run > 0
+        elsif byte >= 0xE3_u8 && byte <= 0xEF_u8
+          start = segmenter.pos
+          run   = segmenter.skip_cjk
+          (run // 3).times { |i| yield bytes[start + i * 3, 3], 2 }
+          next if run > 0
+        end
+      end
+
       start = segmenter.pos
-      size, width = segmenter.next
-      break if size == 0
-      yield bytes[start, size], width
+      length, width = segmenter.next
+      break if length == 0
+      yield bytes[start, length], width
     end
   end
 
@@ -147,9 +165,14 @@ module UW
     total = 0
 
     while segmenter.pos < size
-      if (segmenter.pos == 0 || segmenter.prev.other?) && data[segmenter.pos] < 0x80
-        total += segmenter.skip_ascii
-        break if segmenter.pos >= size
+      if segmenter.pos == 0 || segmenter.prev.other?
+        byte = data[segmenter.pos]
+        if byte < 0x80
+          total += segmenter.skip_ascii
+          break if segmenter.pos >= size
+        elsif byte >= 0xE3_u8 && byte <= 0xEF_u8
+          total += 2 * (segmenter.skip_cjk // 3)
+        end
       end
 
       length, width = segmenter.next
@@ -175,9 +198,14 @@ module UW
     total = 0
 
     while segmenter.pos < size
-      if (segmenter.pos == 0 || segmenter.prev.other?) && data[segmenter.pos] < 0x80
-        total += segmenter.skip_ascii
-        break if segmenter.pos >= size
+      if segmenter.pos == 0 || segmenter.prev.other?
+        byte = data[segmenter.pos]
+        if byte < 0x80
+          total += segmenter.skip_ascii
+          break if segmenter.pos >= size
+        elsif byte >= 0xE3_u8 && byte <= 0xEF_u8
+          total += segmenter.skip_cjk // 3
+        end
       end
 
       break if segmenter.next[0] == 0

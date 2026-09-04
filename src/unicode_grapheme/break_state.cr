@@ -88,7 +88,7 @@ struct UW::BreakState
   private def conditional?(following : Props) : Bool
     return true if @conjunct == CONJUNCT_LINKED && following.incb.consonant?
     return true if @prev.zwj? && @pictographic_run && following.pictographic?
-    return true if @prev.ri? && @regional_run.odd?
+    return true if @prev.ri? && following.gcb.ri? && @regional_run.odd?
 
     false
   end

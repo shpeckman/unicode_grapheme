@@ -71,7 +71,7 @@ define run_clean
 	done
 endef
 
-.PHONY: all test spec bench bench-pinned gen gen-check clean
+.PHONY: all test spec bench bench-pinned bench-median gen gen-check clean
 
 all: test
 
@@ -87,6 +87,12 @@ bench:
 
 bench-pinned:
 	$(run_bench_pinned)
+
+# Median of several rounds: steadier numbers on shared or
+# frequency-scaled machines. Override the round count with ROUNDS=n.
+ROUNDS ?= 3
+bench-median:
+	@$(PYTHON) tool/bench_median.py $(ROUNDS)
 
 gen:
 	$(run_gen)

@@ -372,4 +372,65 @@ describe UW do
       end
     end
   end
+  describe "run fast paths" do
+    it "attaches a combining mark after a CJK run" do
+      clusters("中中́").should eq(["中", "中́"])
+      UW.width("中中́").should eq(4)
+      UW.count("中中́").should eq(2)
+    end
+
+    it "attaches a combining mark after an ASCII run" do
+      clusters("abcdef́").should eq(["a", "b", "c", "d", "e", "f́"])
+    end
+
+    it "segments a Hangul run but joins a trailing jamo" do
+      clusters("가각ᆨ").should eq(["가", "각ᆨ"])
+      UW.width("가각ᆨ").should eq(4)
+    end
+
+    it "does not steal a run start after a Prepend" do
+      clusters("؀中中").should eq(["؀中", "中"])
+    end
+
+    it "segments long runs of ideographs and syllables" do
+      text = "中" * 40 + "가" * 40
+      UW.count(text).should eq(80)
+      UW.width(text).should eq(160)
+      clusters(text).size.should eq(80)
+    end
+
+    it "fits a budget inside a wide run without splitting a cluster" do
+      UW.fit("中中中中", 3).should eq({3, 2})
+      UW.fit("中中中中", 5).should eq({6, 4})
+    end
+
+    it "fits a budget inside an ASCII run" do
+      UW.fit("hello world", 4).should eq({4, 4})
+    end
+
+    it "keeps zero-width clusters when the budget is met exactly" do
+      UW.fit("helló", 5).should eq({7, 5})
+      UW.fit("helló", 4).should eq({4, 4})
+    end
+
+    it "skips into a wide run, consuming a straddling cluster whole" do
+      UW.skip("中中中", 1).should eq({3, 2})
+      UW.skip("中中中", 3).should eq({6, 4})
+      UW.skip("中中中", 6).should eq({9, 6})
+    end
+
+    it "skips a Hangul run" do
+      UW.skip("가각간", 3).should eq({6, 4})
+    end
+
+    it "measures a long mixed line consistently across operations" do
+      line  = "hello 世界 가각 \u{1F600} x" * 30
+      total = 0
+      count = 0
+      UW.each(line) { |_c, w| total += w; count += 1 }
+      UW.width(line).should eq(total)
+      UW.count(line).should eq(count)
+      UW.fit(line, total).should eq({line.bytesize, total})
+    end
+  end
 end

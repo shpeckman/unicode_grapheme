@@ -31,6 +31,10 @@ struct UW::Props
   HANGUL_LV    =    0x2C_u8
   HANGUL_LVT   =    0x2D_u8
 
+  MAXIMUM       = 0x10FFFF_u32
+  UNIFORM_BIT   =   0x8000_u16
+  UNIFORM_VALUE =     0xFF_u16
+
   GCB_MASK          = 0x0F_u8
   PICTOGRAPHIC_MASK = 0x10_u8
   WIDE_MASK         = 0x20_u8
@@ -50,41 +54,16 @@ struct UW::Props
       return new((codepoint - HANGUL_FIRST) % HANGUL_CYCLE == 0 ? HANGUL_LV : HANGUL_LVT)
     end
 
-    # Uniform wide-ideograph blocks: every codepoint is GCB=Other,
-    # INCB=None, not pictographic, wide => 0x20. Verified against the
-    # generated tables.
-    if (codepoint >= 0x3400_u32 && codepoint <= 0x4DBF_u32) ||
-       (codepoint >= 0x4E00_u32 && codepoint <= 0x9FFF_u32) ||
-       (codepoint >= 0xF900_u32 && codepoint <= 0xFAFF_u32)
-      return new(0x20_u8)
-    end
+    # Two-level flat lookup, one entry per 256-codepoint page. A page
+    # whose codepoints all share one value stores it inline as
+    # UNIFORM_BIT | value; any other page indexes a dense 256-entry
+    # block. Either way the lookup is two loads and no search.
+    return new(0_u8) if codepoint > MAXIMUM
 
-    pages = Tables::PAGE
-    page  = (codepoint >> 8).to_i32
-    return new(0_u8) if page >= pages.size
+    entry = Tables::PAGE.to_unsafe[(codepoint >> 8).to_i32]
+    return new((entry & UNIFORM_VALUE).to_u8) if entry.bits_set?(UNIFORM_BIT)
 
-    last = Tables::LO.size - 1
-    low  = pages.to_unsafe[page].to_i32
-    return new(0_u8) if low > last
-
-    high = page + 1 < pages.size ? pages.to_unsafe[page + 1].to_i32 : last
-    high = last if high > last
-
-    lo = Tables::LO.to_unsafe
-    hi = Tables::HI.to_unsafe
-
-    while low < high
-      mid = (low + high + 1) >> 1
-      if lo[mid] <= codepoint
-        low = mid
-      else
-        high = mid - 1
-      end
-    end
-
-    return new(Tables::V.to_unsafe[low]) if lo[low] <= codepoint && codepoint <= hi[low]
-
-    new(0_u8)
+    new(Tables::BLOCK.to_unsafe[(entry.to_i32 << 8) | (codepoint & 0xFF_u32).to_i32])
   end
 
   def gcb : GCB

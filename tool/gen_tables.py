@@ -19,6 +19,22 @@ PAGE_SIZE = 0x100
 ASCII_LIMIT = 0x80
 HANGUL_FIRST = 0xAC00
 HANGUL_LAST = 0xD7A3
+HANGUL_CYCLE = 28
+
+# Runtime layout constants, mirrored in src/unicode_grapheme/props.cr and
+# src/unicode_grapheme/segmenter.cr.
+UNIFORM_BIT = 0x8000
+HANGUL_LV = 0x2C
+HANGUL_LVT = 0x2D
+
+# Blocks the runtime fast paths treat as uniformly wide and
+# break-isolated; check_fast_blocks fails the build if a Unicode update
+# ever changes them.
+FAST_WIDE_BLOCKS = (
+    (0x3400, 0x4DBF),
+    (0x4E00, 0x9FFF),
+    (0xF900, 0xFAFF),
+)
 
 GCB_MASK = 0x0F
 PICTOGRAPHIC_MASK = 0x10
@@ -68,9 +84,7 @@ SOURCES = (
 
 LAYOUT = (
     ("ascii", 16, "{:02X}"),
-    ("lo", 8, "{:05X}"),
-    ("hi", 8, "{:05X}"),
-    ("v", 16, "{:02X}"),
+    ("block", 16, "{:02X}"),
     ("page", 12, "{:d}"),
 )
 
@@ -158,49 +172,80 @@ def build_values(version, cache_dir):
     return values
 
 
-def build_ranges(values):
-    ranges = []
-    start = 0
+def check_fast_blocks(values):
+    """Guard the invariants the runtime fast paths rely on.
 
-    while start <= MAXIMUM:
-        value = values[start]
-        end = start
-        while end < MAXIMUM and values[end + 1] == value:
-            end += 1
+    The segmenter consumes whole runs of the CJK ideograph and Hangul
+    syllable blocks without touching the break-state machine, assuming
+    every such codepoint is wide and break-isolated (and that Hangul
+    syllables alternate LV/LVT with a period of 28). If a Unicode update
+    ever breaks those assumptions, table generation fails here instead
+    of shipping a silently wrong segmenter.
+    """
+    for first, last in FAST_WIDE_BLOCKS:
+        for codepoint in range(first, last + 1):
+            if values[codepoint] != WIDE_MASK:
+                raise SystemExit(
+                    f"U+{codepoint:04X}: fast wide block not uniformly "
+                    f"wide/other ({values[codepoint]:#04x})"
+                )
 
-        if value != 0 and end >= ASCII_LIMIT and not (
-            start >= HANGUL_FIRST and end <= HANGUL_LAST
-        ):
-            ranges.append((start, end, value))
+    for codepoint in range(HANGUL_FIRST, HANGUL_LAST + 1):
+        if (codepoint - HANGUL_FIRST) % HANGUL_CYCLE == 0:
+            expect = HANGUL_LV
+        else:
+            expect = HANGUL_LVT
+        if values[codepoint] != expect:
+            raise SystemExit(
+                f"U+{codepoint:04X}: hangul pattern changed "
+                f"({values[codepoint]:#04x})"
+            )
 
-        start = end + 1
 
-    return ranges
+def build_flat(values):
+    """Two-level flat lookup with one entry per 256-codepoint page.
 
+    A page whose codepoints all share one value stores it inline as
+    UNIFORM_BIT | value. Any other page stores the index of a dense
+    256-entry block, deduplicated, appended to the block table.
+    """
+    # Hangul is computed arithmetically at runtime; keep it out of the
+    # tables so those pages stay uniform.
+    values = bytearray(values)
+    for codepoint in range(HANGUL_FIRST, HANGUL_LAST + 1):
+        values[codepoint] = 0
 
-def build_page(ranges):
     page = []
-    index = 0
+    blocks = []
+    seen = {}
 
-    for start in range(0, MAXIMUM + PAGE_SIZE + 1, PAGE_SIZE):
-        while index < len(ranges) and ranges[index][1] < start:
-            index += 1
+    for start in range(0, MAXIMUM + 1, PAGE_SIZE):
+        chunk = bytes(values[start:start + PAGE_SIZE])
+        if chunk == chunk[:1] * PAGE_SIZE:
+            page.append(UNIFORM_BIT | chunk[0])
+            continue
+
+        index = seen.get(chunk)
+        if index is None:
+            index = len(blocks)
+            blocks.append(chunk)
+            seen[chunk] = index
         page.append(index)
 
-    return page
+    if len(blocks) >= UNIFORM_BIT:
+        raise SystemExit(f"{len(blocks)} blocks exceed the page index")
+
+    return page, blocks
 
 
 def build_tables(values):
-    ranges = build_ranges(values)
-    if len(ranges) > 0xFFFF:
-        raise SystemExit(f"{len(ranges)} ranges exceed the UInt16 page index")
+    check_fast_blocks(values)
+    page, blocks = build_flat(values)
 
     return {
         "ascii": list(values[:ASCII_LIMIT]),
-        "lo": [low for low, _, _ in ranges],
-        "hi": [high for _, high, _ in ranges],
-        "v": [value for _, _, value in ranges],
-        "page": build_page(ranges),
+        "page": page,
+        "block": [byte for block in blocks for byte in block],
     }
 
 
@@ -248,7 +293,10 @@ def main():
     if arguments.check and stale:
         return 1
 
-    print(f"unicode {version}: {len(tables['lo'])} ranges, {len(tables['page'])} pages")
+    print(
+        f"unicode {version}: {len(tables['block']) // PAGE_SIZE} blocks, "
+        f"{len(tables['page'])} pages"
+    )
     return 0
 
 

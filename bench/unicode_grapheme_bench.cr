@@ -35,4 +35,24 @@ Benchmark.ips do |bench|
   end
 end
 
+puts "\nfit"
+Benchmark.ips do |bench|
+  corpus.each do |name, text|
+    bytes = text.to_slice
+    bench.report(name) do
+      sink &+= UW.fit(bytes, 40)[0]
+    end
+  end
+end
+
+puts "\nskip"
+Benchmark.ips do |bench|
+  corpus.each do |name, text|
+    bytes = text.to_slice
+    bench.report(name) do
+      sink &+= UW.skip(bytes, 40)[0]
+    end
+  end
+end
+
 print "\0" if sink == Int32::MIN

@@ -135,7 +135,7 @@ module UW
           next if run > 0
         elsif byte >= 0xE3_u8 && byte <= 0xEF_u8
           start = segmenter.pos
-          run   = segmenter.skip_cjk
+          run   = segmenter.skip_wide
           (run // 3).times { |i| yield bytes[start + i * 3, 3], 2 }
           next if run > 0
         end
@@ -171,7 +171,7 @@ module UW
           total += segmenter.skip_ascii
           break if segmenter.pos >= size
         elsif byte >= 0xE3_u8 && byte <= 0xEF_u8
-          total += 2 * (segmenter.skip_cjk // 3)
+          total += 2 * (segmenter.skip_wide // 3)
         end
       end
 
@@ -204,7 +204,7 @@ module UW
           total += segmenter.skip_ascii
           break if segmenter.pos >= size
         elsif byte >= 0xE3_u8 && byte <= 0xEF_u8
-          total += segmenter.skip_cjk // 3
+          total += segmenter.skip_wide // 3
         end
       end
 
@@ -227,11 +227,33 @@ module UW
   def self.fit(segmenter : Segmenter, bytes : Bytes, columns : Int32) : {Int32, Int32}
     return {0, 0} if columns <= 0
 
+    data  = bytes.to_unsafe
     size  = bytes.size
     count = 0
     total = 0
 
     while segmenter.pos < size
+      if segmenter.pos == 0 || segmenter.prev.other?
+        byte = data[segmenter.pos]
+        if byte < 0x80
+          run = segmenter.skip_ascii(columns - total)
+          if run > 0
+            total += run
+            count = segmenter.pos
+            break if segmenter.pos >= size
+            next
+          end
+        elsif byte >= 0xE3_u8 && byte <= 0xEF_u8
+          run = segmenter.skip_wide((columns - total) // 2)
+          if run > 0
+            total += 2 * (run // 3)
+            count = segmenter.pos
+            break if segmenter.pos >= size
+            next
+          end
+        end
+      end
+
       length, width = segmenter.next
       break if length == 0
       break if total + width > columns
@@ -254,10 +276,28 @@ module UW
   def self.skip(segmenter : Segmenter, bytes : Bytes, columns : Int32) : {Int32, Int32}
     return {0, 0} if columns <= 0
 
+    data  = bytes.to_unsafe
     size  = bytes.size
     total = 0
 
     while segmenter.pos < size && total < columns
+      if segmenter.pos == 0 || segmenter.prev.other?
+        byte = data[segmenter.pos]
+        if byte < 0x80
+          run = segmenter.skip_ascii(columns - total)
+          if run > 0
+            total += run
+            next
+          end
+        elsif byte >= 0xE3_u8 && byte <= 0xEF_u8
+          run = segmenter.skip_wide((columns - total + 1) // 2)
+          if run > 0
+            total += 2 * (run // 3)
+            next
+          end
+        end
+      end
+
       length, width = segmenter.next
       break if length == 0
       total += width

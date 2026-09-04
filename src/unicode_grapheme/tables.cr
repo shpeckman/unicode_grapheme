@@ -12,8 +12,6 @@ module UW::Tables
   end
 
   ASCII = build_from_file(UInt8, "0x", "u8", "data/ascii")
-  LO    = build_from_file(UInt32, "0x", "u32", "data/lo")
-  HI    = build_from_file(UInt32, "0x", "u32", "data/hi")
-  V     = build_from_file(UInt8, "0x", "u8", "data/v")
+  BLOCK = build_from_file(UInt8, "0x", "u8", "data/block")
   PAGE  = build_from_file(UInt16, "", "u16", "data/page")
 end

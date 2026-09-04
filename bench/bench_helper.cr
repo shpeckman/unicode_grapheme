@@ -13,15 +13,18 @@ module BenchHelper
   EMOJI_LINE = ("\u{1F468}\u200D\u{1F469}\u200D\u{1F467}\u200D\u{1F466}" \
                 "\u{1F600}\u{1F1FA}\u{1F1F8}\u2764\uFE0F") * 6
 
+  HANGUL_LINE = "\uAC00\uAC01\uAC04\uAC07\uAC09\uAC0B\uAC1B\uAC1C\uAC24\uAC25" * 8
+
   MIXED_LINE = "Hello \u4E16\u754C \u{1F44B}\u{1F3FB}, caf\u00E9 \u0915\u094D\u0915 " \
                "\u{1F1EB}\u{1F1F7}\u{1F1E9}\u{1F1EA} test. " * 4
 
   def corpus : Array({String, String})
     [
-      {"ascii", ASCII_LINE},
-      {"cjk",   CJK_LINE},
-      {"emoji", EMOJI_LINE},
-      {"mixed", MIXED_LINE},
+      {"ascii",  ASCII_LINE},
+      {"cjk",    CJK_LINE},
+      {"hangul", HANGUL_LINE},
+      {"emoji",  EMOJI_LINE},
+      {"mixed",  MIXED_LINE},
     ]
   end
 end

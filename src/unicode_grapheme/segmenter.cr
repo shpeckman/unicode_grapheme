@@ -87,17 +87,24 @@ struct UW::Segmenter
     {pos - start, width.value}
   end
 
-  def skip_ascii : Int32
+  # Consumes a run of printable ASCII bytes, at most `limit` of them.
+  # The last byte of a run is consumed only when followed by another
+  # printable ASCII byte (or the end of the input), so a trailing
+  # combining mark or escape still joins with it through the regular
+  # path. A run cut short by `limit` always ends on a cluster boundary:
+  # the byte after a cut is a printable ASCII singleton.
+  def skip_ascii(limit : Int32 = Int32::MAX) : Int32
     @ahead = false
     start  = @pos
+    stop   = limit >= @size - start ? @size : start + limit
 
-    while @pos + WORD_BYTES <= @size
+    while @pos + WORD_BYTES <= stop
       break unless printable_word?(load_word(@pos))
       break unless @pos + WORD_BYTES == @size || ascii_printable?(@data[@pos + WORD_BYTES])
       @pos += WORD_BYTES
     end
 
-    while @pos < @size && ascii_printable?(@data[@pos]) &&
+    while @pos < stop && ascii_printable?(@data[@pos]) &&
           (@pos + 1 == @size || ascii_printable?(@data[@pos + 1]))
       @pos += 1
     end
@@ -106,19 +113,24 @@ struct UW::Segmenter
     @pos - start
   end
 
-  # Consumes a run of codepoints from the uniform CJK wide-ideograph
-  # blocks, returning the byte count. Every such codepoint is a plain,
-  # wide, break-isolated cluster, so a run needs no break-state work.
-  # A codepoint is consumed only when another ideograph follows it, so
-  # the final ideograph of a run is left to the regular path: a trailing
-  # Extend, ZWJ or SpacingMark must still join with it.
-  def skip_cjk : Int32
+  # Consumes a run of codepoints from the uniform wide blocks (CJK
+  # ideographs and Hangul syllables: all GCB=Other or LV/LVT, INCB=None,
+  # not pictographic, wide), at most `limit` of them, returning the byte
+  # count. Every such codepoint is a width-2, break-isolated cluster, so
+  # a run needs no break-state work. A codepoint is consumed only when
+  # another run codepoint follows it, so the final one is left to the
+  # regular path: a trailing Extend, ZWJ, SpacingMark or Hangul jamo must
+  # still join with it. A run cut short by `limit` always ends on a
+  # cluster boundary.
+  def skip_wide(limit : Int32 = Int32::MAX) : Int32
     @ahead = false
     start  = @pos
+    chars  = 0
 
-    while @pos + 6 <= @size && cjk3?(@pos)
-      break unless cjk3?(@pos + 3)
+    while chars < limit && @pos + 6 <= @size && wide3?(@pos)
+      break unless wide3?(@pos + 3)
       @pos += 3
+      chars += 1
     end
 
     @state.reset
@@ -126,8 +138,10 @@ struct UW::Segmenter
   end
 
   # True when the three bytes at `pos` encode a codepoint in one of the
-  # uniform wide-ideograph blocks (all GCB=Other, INCB=None, wide).
-  private def cjk3?(pos : Int32) : Bool
+  # uniform wide blocks (CJK ideographs U+3400-U+4DBF, U+4E00-U+9FFF,
+  # U+F900-U+FAFF, Hangul syllables U+AC00-U+D7A3). The generator asserts
+  # these blocks keep the properties the fast path relies on.
+  private def wide3?(pos : Int32) : Bool
     lead = @data[pos]
     return false unless lead >= 0xE3_u8 && lead <= 0xEF_u8
     b1 = @data[pos + 1]
@@ -138,6 +152,7 @@ struct UW::Segmenter
                 (b2 & 0x3F_u8).to_u32
     (codepoint >= 0x3400_u32 && codepoint <= 0x4DBF_u32) ||
       (codepoint >= 0x4E00_u32 && codepoint <= 0x9FFF_u32) ||
+      (codepoint >= 0xAC00_u32 && codepoint <= 0xD7A3_u32) ||
       (codepoint >= 0xF900_u32 && codepoint <= 0xFAFF_u32)
   end
 

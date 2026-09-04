@@ -7,11 +7,13 @@
 #     puts "#{String.new(cluster)} (#{width})"
 #   end
 #
-# Three operations, each with a `String` and a `Bytes` overload:
+# Five operations, each with a `String` and a `Bytes` overload:
 #
 #   UW.each(input) { |cluster : Bytes, width : Int32| }
 #   UW.width(input) : Int32
 #   UW.count(input) : Int32
+#   UW.fit(input, columns) : {Int32, Int32}
+#   UW.skip(input, columns) : {Int32, Int32}
 #
 #   UW.count("e\u0301a\u0301")             # => 2
 #   UW.count("\u{1F468}\u200D\u{1F469}")   # => 1
@@ -21,6 +23,24 @@
 #   UW.width("e\u0301")                    # => 1
 #   UW.width("\u{1F1FA}\u{1F1F8}")         # => 2
 #   UW.width("\t")                         # => 0
+
+# Fitting to a column budget
+# --------------------------
+#
+# `fit` returns the longest prefix that occupies at most `columns` columns,
+# as `{byte_count, width}`. A cluster that would cross the budget is left
+# out entirely, so a wide glyph is never cut in half:
+#
+#   UW.fit("你好世界", 5)                   # => {6, 4}
+#
+# `skip` is its dual: the shortest prefix occupying at least `columns`
+# columns. A cluster straddling the boundary is consumed whole, so the
+# returned width may exceed `columns` by one:
+#
+#   UW.skip("你好世界", 1)                  # => {3, 2}
+#
+# Together they clip a run of text to a window without splitting clusters
+# at either edge.
 
 # Cluster slices
 # --------------
@@ -137,5 +157,48 @@ module UW
 
   def self.count(string : String) : Int32
     count(string.to_slice)
+  end
+
+  def self.fit(bytes : Bytes, columns : Int32) : {Int32, Int32}
+    return {0, 0} if columns <= 0
+
+    segmenter = Segmenter.new(bytes)
+    size      = bytes.size
+    count     = 0
+    total     = 0
+
+    while segmenter.pos < size
+      length, width = segmenter.next
+      break if length == 0
+      break if total + width > columns
+      count = segmenter.pos
+      total += width
+    end
+
+    {count, total}
+  end
+
+  def self.fit(string : String, columns : Int32) : {Int32, Int32}
+    fit(string.to_slice, columns)
+  end
+
+  def self.skip(bytes : Bytes, columns : Int32) : {Int32, Int32}
+    return {0, 0} if columns <= 0
+
+    segmenter = Segmenter.new(bytes)
+    size      = bytes.size
+    total     = 0
+
+    while segmenter.pos < size && total < columns
+      length, width = segmenter.next
+      break if length == 0
+      total += width
+    end
+
+    {segmenter.pos, total}
+  end
+
+  def self.skip(string : String, columns : Int32) : {Int32, Int32}
+    skip(string.to_slice, columns)
   end
 end
